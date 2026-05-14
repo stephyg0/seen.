@@ -23,7 +23,6 @@ type OpenRouterChunk = {
   };
 };
 
-const encoder = new TextEncoder();
 const OPENROUTER_RETRY_DELAYS_MS = [0, 900, 1900];
 const UNAVAILABLE_REPLY =
   "my phone is being weird give me a minute";
@@ -39,82 +38,55 @@ export async function POST(request: Request) {
   );
   const messages = messagesForModel(body.messages);
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        if (!process.env.OPENROUTER_API_KEY) {
-          console.error("OpenRouter API key missing. Set OPENROUTER_API_KEY in local and deployed environments.");
-          await writeWithPacing(controller, UNAVAILABLE_REPLY);
-          controller.close();
-          return;
-        }
+  try {
+    if (!process.env.OPENROUTER_API_KEY) {
+      console.error("OpenRouter API key missing. Set OPENROUTER_API_KEY in local and deployed environments.");
+      return textResponse(UNAVAILABLE_REPLY, 503);
+    }
 
-        const openrouter = new OpenRouter({
-          apiKey: process.env.OPENROUTER_API_KEY
-        });
+    const openrouter = new OpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY
+    });
 
-        const requestMessages = [
+    const requestMessages = [
+      {
+        role: "system",
+        content: systemPrompt
+      },
+      ...messages
+    ];
+    let response = await generateOpenRouterReplyWithRetry(
+      openrouter,
+      requestMessages
+    );
+
+    if (isTooSimilarToRecent(response, body.messages)) {
+      response = await generateOpenRouterReplyWithRetry(
+        openrouter,
+        [
+          ...requestMessages,
           {
             role: "system",
-            content: systemPrompt
-          },
-          ...messages
-        ];
-        let response = await generateOpenRouterReplyWithRetry(
-          openrouter,
-          requestMessages
-        );
-
-        if (isTooSimilarToRecent(response, body.messages)) {
-          response = await generateOpenRouterReplyWithRetry(
-            openrouter,
-            [
-              ...requestMessages,
-              {
-                role: "system",
-                content:
-                  "That reply was too repetitive. Write a different toxic ex reply with a new angle. Keep it short and natural."
-              }
-            ]
-          );
-        }
-
-        if (!response.trim()) {
-          console.error("OpenRouter returned empty responses after retries.");
-          await writeWithPacing(controller, UNAVAILABLE_REPLY);
-        } else {
-          await writeWithPacing(controller, response);
-        }
-
-        controller.close();
-      } catch (error) {
-        console.error(error);
-        await writeWithPacing(
-          controller,
-          isCreditOrQuotaError(error) ? CREDIT_EXHAUSTED_REPLY : UNAVAILABLE_REPLY
-        );
-        controller.close();
-      }
+            content:
+              "That reply was too repetitive. Write a different toxic ex reply with a new angle. Keep it short and natural."
+          }
+        ]
+      );
     }
-  });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      "X-Accel-Buffering": "no"
+    if (!response.trim()) {
+      console.error("OpenRouter returned empty responses after retries.");
+      return textResponse(UNAVAILABLE_REPLY, 503);
     }
-  });
-}
 
-async function writeWithPacing(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  text: string
-) {
-  const cleanText = cleanTextingStyle(text);
-  for (const piece of cleanText.match(/.{1,5}/g) ?? [cleanText]) {
-    controller.enqueue(encoder.encode(piece));
-    await new Promise((resolve) => setTimeout(resolve, 45));
+    return textResponse(response);
+  } catch (error) {
+    console.error(error);
+    if (isCreditOrQuotaError(error)) {
+      return textResponse(CREDIT_EXHAUSTED_REPLY, 402);
+    }
+
+    return textResponse(UNAVAILABLE_REPLY, 503);
   }
 }
 
@@ -131,6 +103,17 @@ function cleanTextingStyle(text: string) {
     .replace(/([^\s.?!…-])[.](?=\s|$)/g, "$1")
     .replace(/\s{2,}/g, " ")
     .trimStart();
+}
+
+function textResponse(text: string, status = 200) {
+  return new Response(cleanTextingStyle(text), {
+    status,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    }
+  });
 }
 
 function streamSafeText(text: string) {

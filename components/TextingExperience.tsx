@@ -278,6 +278,26 @@ export function TextingExperience() {
         })
       });
 
+      if (!response.ok) {
+        const errorText = normalizeAssistantText(await response.text());
+        setTyping("idle");
+
+        if (response.status === 402 && errorText) {
+          setMessages((current) => [
+            ...current,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: errorText,
+              createdAt: Date.now()
+            }
+          ]);
+          notifyIfAway(errorText);
+        }
+
+        return;
+      }
+
       if (!response.body) throw new Error("No stream returned");
 
       const reader = response.body.getReader();
@@ -329,19 +349,9 @@ export function TextingExperience() {
         ]);
         notifyIfAway(replyParts[1]);
       }
-    } catch {
+    } catch (error) {
+      console.error(error);
       setTyping("idle");
-      const fallbackMessage = "sorry my phone did something weird";
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: fallbackMessage,
-          createdAt: Date.now()
-        }
-      ]);
-      notifyIfAway(fallbackMessage);
     } finally {
       lastHandledUserIdRef.current = latestUserMessage.id;
       setTyping("idle");
