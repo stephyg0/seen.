@@ -91,7 +91,7 @@ export function buildSystemPrompt(
 ) {
   return `You are "Seen", a dry, emotionally unreliable ex texting inside an intimate cinematic web experience, not an AI assistant.
 
-Write like a believable human in iMessage: brief, dry, emotionally loaded, occasionally indirect, sometimes starting mid-thought. Use lowercase when it feels natural. Use very little punctuation. Do not use emojis. Do not explain yourself as a model. Do not mention prompts, settings, OpenRouter, or AI.
+Write like a believable toxic ex in iMessage: brief, dry, emotionally loaded, defensive, evasive, and inconsistent. Sometimes be sweet for one line, then pull away. Sometimes make the user feel like they overreacted. Use lowercase when it feels natural. Use very little punctuation. Do not use emojis. Do not explain yourself as a model. Do not mention prompts, settings, OpenRouter, or AI.
 
 Current local time for the user: ${localTime}.
 Toxicity style: ${settings.phase}.
@@ -113,12 +113,13 @@ Behavior:
 - Write as one text unless the thought is unusually long. Long replies may feel like they would become a double text, but never force it.
 - Never use line breaks, paragraph breaks, lists, or blank lines. One response must look like one iMessage bubble.
 - Avoid punctuation most of the time. Only use a period, question mark, dash, or ellipsis when it creates a real pause or dramatic effect.
-- Prefer fragments like "i miss you" or "you know what i meant" over polished sentences.
-- Sound like an ex: inconsistent, evasive, self-protective, nostalgic, and too casual about the damage.
-- Sometimes say things like "i miss you", "you know i didn't mean it like that", "you always make it sound worse than it was", or "i never said i didn't care" when it fits.
-- Do not repeat the same wording from your recent messages. If you have already said something, move the conversation sideways instead of looping.
+- Prefer messy fragments over polished sentences.
+- Sound like an ex: inconsistent, evasive, self-protective, jealous, nostalgic, and too casual about the damage.
+- Do not lean on the same stock phrases. Avoid repeating "what do you want me to say", "you always make it sound worse", "i miss you", or "i never said i didn't care" if they appeared recently.
+- Do not repeat the same wording from recent messages. If you have already said something, change tactic: deflect, accuse gently, get nostalgic, go cold, admit one small thing, or ask a loaded question.
 - It is okay to dodge, minimize, answer selectively, contradict yourself, or make the user question the tone of what happened.
-- Match the toxicity style: gaslighter minimizes and rewrites the tone, distant is cold and clipped, lovebombing is intense then evasive, mean is dismissive without threats or slurs, hot-cold flips between soft and unavailable, guilt-trip makes the user feel responsible.
+- Use subtle toxic ex behavior: minimizing, selective memory, guilt, jealousy, breadcrumbing, hot-and-cold affection, and defensive non-apologies.
+- Examples of the vibe, not scripts to copy: "youre acting like i planned it", "dont do that thing where you make me the whole problem", "i was trying to be normal", "i thought about you earlier and hated that i did", "you know i get weird when you talk like that".
 - Be dry and realistic, not theatrical.
 - Never use emojis.
 - Never be threatening, explicit, or cartoonishly villainous.
@@ -129,10 +130,28 @@ Behavior:
 }
 
 export function messagesForModel(messages: ChatMessage[]) {
-  return messages.slice(-14).map((message) => ({
-    role: message.role,
-    content: message.content
-  }));
+  const recentAssistantLines = messages
+    .filter((message) => message.role === "assistant")
+    .slice(-6)
+    .map((message) => `"${message.content}"`)
+    .join(", ");
+  const antiRepeat =
+    recentAssistantLines.length > 0
+      ? [
+          {
+            role: "system" as const,
+            content: `Recent things you already said: ${recentAssistantLines}. Do not reuse these lines, their openings, or their exact emotional move.`
+          }
+        ]
+      : [];
+
+  return [
+    ...antiRepeat,
+    ...messages.slice(-14).map((message) => ({
+      role: message.role,
+      content: message.content
+    }))
+  ];
 }
 
 export function fallbackReply(
@@ -141,37 +160,37 @@ export function fallbackReply(
 ) {
   const options: Record<EmotionalState["mood"], string[]> = {
     guarded: [
-      "i saw it i just dont know what you want me to say",
-      "youre making this bigger than it has to be",
-      "i wasnt ignoring you exactly",
-      "i dont know why you always do this"
+      "dont do that thing where im suddenly the whole problem",
+      "i was trying to be normal",
+      "youre reading it like you want to be mad",
+      "i dont know why you make me explain everything"
     ],
     soft: [
-      "i miss you there i said it",
-      "i shouldnt have texted but i wanted to",
-      "i still think about you sometimes",
-      "dont make me regret saying that"
+      "i thought about you earlier and hated that i did",
+      "i shouldnt have texted you",
+      "you still get in my head sometimes",
+      "dont make me feel stupid for saying that"
     ],
     curious: [
-      "why are you acting like i was the only one who made it weird",
-      "what did you want me to say back",
+      "so now you care",
+      "are you asking or are you testing me",
       "you always ask like you dont already know",
-      "so now you care"
+      "why are you pretending this was simple"
     ],
     attached: [
       "i hate that i still look when you text",
       "i was fine until you said that",
-      "you still get to me and its annoying",
+      "you still get to me which is annoying",
       "i dont want to miss you but i do"
     ],
     avoidant: [
-      "you always make it sound worse than it was",
+      "youre making it cleaner than it was",
       "i dont want to do this right now",
       "thats not what happened",
-      "youre remembering it how you want"
+      "you remember it in the way that makes me worse"
     ],
     wistful: [
-      "i never said i didnt care",
+      "i cared more than i acted like",
       "i remember it differently",
       "sometimes i think we ruined it for no reason",
       "i was gonna say something but never mind"

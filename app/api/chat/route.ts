@@ -51,55 +51,30 @@ export async function POST(request: Request) {
           apiKey: process.env.OPENROUTER_API_KEY
         });
 
-        // Stream the response to get reasoning tokens in usage
-        const stream = (await openrouter.chat.send(
+        const requestMessages = [
           {
-            chatRequest: {
-              model: DEFAULT_MODEL,
-              messages: [
-                {
-                  role: "system",
-                  content: systemPrompt
-                },
-                ...messages
-              ],
-              stream: true,
-              maxCompletionTokens: 220,
-              temperature: 0.95,
-              presencePenalty: 0.6,
-              frequencyPenalty: 0.45
-            }
-          } as any,
-          {
-            timeoutMs: 20000,
-            retries: { strategy: "none" },
-            headers: {
-              Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
-            }
-          }
-        )) as unknown as AsyncIterable<OpenRouterChunk>;
+            role: "system",
+            content: systemPrompt
+          },
+          ...messages
+        ];
+        let response = await streamOpenRouterReply(
+          openrouter,
+          requestMessages
+        );
 
-        let response = "";
-
-        for await (const chunk of stream) {
-          const content = streamSafeText(chunk.choices[0]?.delta?.content ?? "");
-
-          if (content) {
-            response += content;
-
-            // Stream tokens to frontend in real time
-            process.stdout.write(content);
-            controller.enqueue(encoder.encode(content));
-          }
-
-          // Usage information comes in final chunk
-          if (chunk.usage) {
-            const reasoningTokens =
-              chunk.usage.reasoningTokens ??
-              chunk.usage.completionTokensDetails?.reasoningTokens ??
-              0;
-            console.log("\nReasoning tokens:", reasoningTokens);
-          }
+        if (isTooSimilarToRecent(response, body.messages)) {
+          response = await streamOpenRouterReply(
+            openrouter,
+            [
+              ...requestMessages,
+              {
+                role: "system",
+                content:
+                  "That reply was too repetitive. Write a different toxic ex reply with a new angle. Keep it short and natural."
+              }
+            ]
+          );
         }
 
         if (!response.trim()) {
@@ -107,6 +82,8 @@ export async function POST(request: Request) {
             controller,
             fallbackReply(body.emotion, body.messages)
           );
+        } else {
+          await writeWithPacing(controller, response);
         }
 
         controller.close();
@@ -164,4 +141,79 @@ function streamSafeText(text: string) {
     .replace(/[!。]/g, "")
     .replace(/([^\s.?!…-])[.](?=\s|$)/g, "$1")
     .replace(/[ \t]{2,}/g, " ");
+}
+
+async function streamOpenRouterReply(
+  openrouter: OpenRouter,
+  messages: Array<{ role: string; content: string }>
+) {
+  // Stream the response to get reasoning tokens in usage
+  const stream = (await openrouter.chat.send(
+    {
+      chatRequest: {
+        model: DEFAULT_MODEL,
+        messages,
+        stream: true,
+        maxCompletionTokens: 220,
+        temperature: 1.08,
+        presencePenalty: 0.9,
+        frequencyPenalty: 0.85
+      }
+    } as any,
+    {
+      timeoutMs: 20000,
+      retries: { strategy: "none" },
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
+      }
+    }
+  )) as unknown as AsyncIterable<OpenRouterChunk>;
+
+  let response = "";
+
+  for await (const chunk of stream) {
+    const content = streamSafeText(chunk.choices[0]?.delta?.content ?? "");
+
+    if (content) {
+      response += content;
+
+      process.stdout.write(content);
+    }
+
+    // Usage information comes in final chunk
+    if (chunk.usage) {
+      const reasoningTokens =
+        chunk.usage.reasoningTokens ??
+        chunk.usage.completionTokensDetails?.reasoningTokens ??
+        0;
+      console.log("\nReasoning tokens:", reasoningTokens);
+    }
+  }
+
+  return response;
+}
+
+function isTooSimilarToRecent(response: string, messages: ChatMessage[]) {
+  const normalizedResponse = normalizeForSimilarity(response);
+  if (normalizedResponse.length < 5) return false;
+
+  return messages
+    .filter((message) => message.role === "assistant")
+    .slice(-6)
+    .some((message) => {
+      const normalizedMessage = normalizeForSimilarity(message.content);
+      return (
+        normalizedMessage === normalizedResponse ||
+        normalizedMessage.includes(normalizedResponse) ||
+        normalizedResponse.includes(normalizedMessage)
+      );
+    });
+}
+
+function normalizeForSimilarity(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
