@@ -2,7 +2,6 @@ import { OpenRouter } from "@openrouter/sdk";
 import {
   DEFAULT_MODEL,
   buildSystemPrompt,
-  fallbackReply,
   messagesForModel
 } from "@/lib/emotion-engine";
 import type { ChatMessage, EmotionalState, SettingsState } from "@/lib/chat-types";
@@ -25,6 +24,11 @@ type OpenRouterChunk = {
 };
 
 const encoder = new TextEncoder();
+const OPENROUTER_RETRY_DELAYS_MS = [0, 900, 1900];
+const UNAVAILABLE_REPLY =
+  "my phone is being weird give me a minute";
+const CREDIT_EXHAUSTED_REPLY =
+  "i cant text right now";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as ChatRequest;
@@ -39,11 +43,8 @@ export async function POST(request: Request) {
     async start(controller) {
       try {
         if (!process.env.OPENROUTER_API_KEY) {
-          console.warn("OpenRouter API key missing; using local fallback reply.");
-          await writeWithPacing(
-            controller,
-            fallbackReply(body.emotion, body.messages)
-          );
+          console.error("OpenRouter API key missing. Set OPENROUTER_API_KEY in local and deployed environments.");
+          await writeWithPacing(controller, UNAVAILABLE_REPLY);
           controller.close();
           return;
         }
@@ -59,13 +60,13 @@ export async function POST(request: Request) {
           },
           ...messages
         ];
-        let response = await streamOpenRouterReply(
+        let response = await generateOpenRouterReplyWithRetry(
           openrouter,
           requestMessages
         );
 
         if (isTooSimilarToRecent(response, body.messages)) {
-          response = await streamOpenRouterReply(
+          response = await generateOpenRouterReplyWithRetry(
             openrouter,
             [
               ...requestMessages,
@@ -79,11 +80,8 @@ export async function POST(request: Request) {
         }
 
         if (!response.trim()) {
-          console.warn("OpenRouter returned an empty response; using local fallback reply.");
-          await writeWithPacing(
-            controller,
-            fallbackReply(body.emotion, body.messages)
-          );
+          console.error("OpenRouter returned empty responses after retries.");
+          await writeWithPacing(controller, UNAVAILABLE_REPLY);
         } else {
           await writeWithPacing(controller, response);
         }
@@ -91,10 +89,9 @@ export async function POST(request: Request) {
         controller.close();
       } catch (error) {
         console.error(error);
-        console.warn("OpenRouter request failed; using local fallback reply.");
         await writeWithPacing(
           controller,
-          fallbackReply(body.emotion, body.messages)
+          isCreditOrQuotaError(error) ? CREDIT_EXHAUSTED_REPLY : UNAVAILABLE_REPLY
         );
         controller.close();
       }
@@ -196,6 +193,30 @@ async function streamOpenRouterReply(
   return response;
 }
 
+async function generateOpenRouterReplyWithRetry(
+  openrouter: OpenRouter,
+  messages: Array<{ role: string; content: string }>
+) {
+  let lastError: unknown = null;
+
+  for (const [attemptIndex, delayMs] of OPENROUTER_RETRY_DELAYS_MS.entries()) {
+    if (delayMs > 0) await delay(delayMs);
+
+    try {
+      const response = await streamOpenRouterReply(openrouter, messages);
+      if (response.trim()) return response;
+      console.warn(`OpenRouter returned empty response on attempt ${attemptIndex + 1}.`);
+    } catch (error) {
+      lastError = error;
+      console.error(`OpenRouter attempt ${attemptIndex + 1} failed.`, error);
+      if (isCreditOrQuotaError(error)) throw error;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return "";
+}
+
 function isTooSimilarToRecent(response: string, messages: ChatMessage[]) {
   const normalizedResponse = normalizeForSimilarity(response);
   if (normalizedResponse.length < 5) return false;
@@ -219,4 +240,22 @@ function normalizeForSimilarity(text: string) {
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isCreditOrQuotaError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const lower = message.toLowerCase();
+
+  return (
+    lower.includes("rate limit exceeded") ||
+    lower.includes("free-models-per-day") ||
+    lower.includes("requires more credits") ||
+    lower.includes("paymentrequired") ||
+    lower.includes("insufficient credits")
+  );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
