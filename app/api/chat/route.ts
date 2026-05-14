@@ -47,7 +47,9 @@ export async function POST(request: Request) {
       process.env.NODE_ENV === "development" &&
       request.headers.get("x-seen-test-credit-exhausted") === "1"
     ) {
-      return textResponse(fallbackReply(body.emotion, body.messages));
+      return textResponse(fallbackReply(body.emotion, body.messages), 200, {
+        "X-Seen-Fallback": "quota"
+      });
     }
 
     const openrouter = new OpenRouter({
@@ -90,7 +92,9 @@ export async function POST(request: Request) {
     console.error(error);
     if (isCreditOrQuotaError(error)) {
       console.warn("OpenRouter credits or free quota exhausted; using local conversation fallback.");
-      return textResponse(fallbackReply(body.emotion, body.messages));
+      return textResponse(fallbackReply(body.emotion, body.messages), 200, {
+        "X-Seen-Fallback": "quota"
+      });
     }
 
     return textResponse(UNAVAILABLE_REPLY, 503);
@@ -112,13 +116,18 @@ function cleanTextingStyle(text: string) {
     .trimStart();
 }
 
-function textResponse(text: string, status = 200) {
+function textResponse(
+  text: string,
+  status = 200,
+  extraHeaders: Record<string, string> = {}
+) {
   return new Response(cleanTextingStyle(text), {
     status,
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
-      "X-Accel-Buffering": "no"
+      "X-Accel-Buffering": "no",
+      ...extraHeaders
     }
   });
 }

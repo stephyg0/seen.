@@ -52,6 +52,15 @@ const openingMessages: ChatMessage[] = [
   }
 ];
 
+const QUOTA_FALLBACK_LIMIT = 2;
+
+const quotaExitMessages = [
+  "yk nvm im busy we can talk later",
+  "i cant text rn",
+  "never mind i have to go",
+  "i shouldnt be doing this rn"
+];
+
 export function TextingExperience() {
   const [started, setStarted] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -79,6 +88,8 @@ export function TextingExperience() {
   const replyInFlightRef = useRef(false);
   const pendingReplyRef = useRef(false);
   const lastHandledUserIdRef = useRef<string | null>(null);
+  const quotaFallbackCountRef = useRef(0);
+  const quotaGhostUntilRef = useRef(0);
 
   useEffect(() => {
     setNotificationPermission(
@@ -100,6 +111,22 @@ export function TextingExperience() {
         setContactName(profile.contactName);
         setSetupName(profile.contactName);
       }
+    }
+
+    const savedQuotaFallbackCount = Number(
+      window.localStorage.getItem("seen-quota-fallback-count") ?? "0"
+    );
+    const savedQuotaGhostUntil = Number(
+      window.localStorage.getItem("seen-quota-ghost-until") ?? "0"
+    );
+
+    if (savedQuotaGhostUntil > Date.now()) {
+      quotaFallbackCountRef.current = Number.isFinite(savedQuotaFallbackCount)
+        ? savedQuotaFallbackCount
+        : 0;
+      quotaGhostUntilRef.current = savedQuotaGhostUntil;
+    } else {
+      clearQuotaFallbackState();
     }
   }, []);
 
@@ -234,6 +261,16 @@ export function TextingExperience() {
 
     await pause(900 + Math.random() * 1900);
 
+    if (isQuotaGhosting()) {
+      lastHandledUserIdRef.current = latestUserMessage.id;
+      setTyping("idle");
+      setIsSending(false);
+      replyInFlightRef.current = false;
+      inputRef.current?.focus();
+      if (pendingReplyRef.current) requestReplySoon();
+      return;
+    }
+
     if (shouldLeaveOnRead) {
       lastHandledUserIdRef.current = latestUserMessage.id;
       setTyping("idle");
@@ -298,6 +335,7 @@ export function TextingExperience() {
         return;
       }
 
+      const fallbackReason = response.headers.get("X-Seen-Fallback");
       if (!response.body) throw new Error("No stream returned");
 
       const reader = response.body.getReader();
@@ -319,8 +357,10 @@ export function TextingExperience() {
 
       setTyping("idle");
       const cleanReply = normalizeAssistantText(responseText);
-      await pause(Math.min(900, 160 + cleanReply.length * 12));
-      const replyParts = splitAssistantReply(cleanReply);
+      const finalReply = resolveQuotaFallbackReply(cleanReply, fallbackReason);
+      if (!finalReply) return;
+      await pause(Math.min(900, 160 + finalReply.length * 12));
+      const replyParts = splitAssistantReply(finalReply);
 
       setMessages((current) => [
         ...current,
@@ -395,6 +435,49 @@ export function TextingExperience() {
     const permission = await requestNotificationPermission();
     setNotificationPermission(permission);
     return permission;
+  }
+
+  function resolveQuotaFallbackReply(reply: string, fallbackReason: string | null) {
+    if (fallbackReason !== "quota") {
+      clearQuotaFallbackState();
+      return reply;
+    }
+
+    if (quotaFallbackCountRef.current >= QUOTA_FALLBACK_LIMIT) {
+      const exitMessage = pickQuotaExitMessage();
+      const ghostUntil = nextUtcMidnight();
+      quotaGhostUntilRef.current = ghostUntil;
+      window.localStorage.setItem("seen-quota-ghost-until", String(ghostUntil));
+      window.localStorage.setItem(
+        "seen-quota-fallback-count",
+        String(quotaFallbackCountRef.current)
+      );
+      return exitMessage;
+    }
+
+    quotaFallbackCountRef.current += 1;
+    window.localStorage.setItem(
+      "seen-quota-fallback-count",
+      String(quotaFallbackCountRef.current)
+    );
+
+    return reply;
+  }
+
+  function isQuotaGhosting() {
+    if (quotaGhostUntilRef.current <= Date.now()) {
+      clearQuotaFallbackState();
+      return false;
+    }
+
+    return true;
+  }
+
+  function clearQuotaFallbackState() {
+    quotaFallbackCountRef.current = 0;
+    quotaGhostUntilRef.current = 0;
+    window.localStorage.removeItem("seen-quota-fallback-count");
+    window.localStorage.removeItem("seen-quota-ghost-until");
   }
 
   return (
@@ -524,6 +607,19 @@ function notificationLabel(permission: NotificationPermission | "unsupported") {
   if (permission === "denied") return "blocked in browser settings";
   if (permission === "unsupported") return "not supported here";
   return "allow notifications";
+}
+
+function pickQuotaExitMessage() {
+  return quotaExitMessages[Math.floor(Math.random() * quotaExitMessages.length)];
+}
+
+function nextUtcMidnight() {
+  const now = new Date();
+  return Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1
+  );
 }
 
 function Landing({ onStart }: { onStart: () => void }) {
