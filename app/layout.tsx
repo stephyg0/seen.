@@ -2,8 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  applicationName: "seen",
   title: "Seen",
-  description: "An emotionally realistic texting experience."
+  description: "An emotionally realistic texting experience.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "seen",
+    statusBarStyle: "black-translucent"
+  }
 };
 
 export const viewport: Viewport = {

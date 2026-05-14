@@ -298,8 +298,9 @@ export function TextingExperience() {
       }
 
       setTyping("idle");
-      await pause(Math.min(900, 160 + responseText.length * 12));
-      const replyParts = splitAssistantReply(responseText);
+      const cleanReply = normalizeAssistantText(responseText);
+      await pause(Math.min(900, 160 + cleanReply.length * 12));
+      const replyParts = splitAssistantReply(cleanReply);
 
       setMessages((current) => [
         ...current,
@@ -614,7 +615,7 @@ function TypingIndicator() {
 }
 
 function splitAssistantReply(text: string) {
-  const clean = text.trim().replace(/\s+/g, " ");
+  const clean = normalizeAssistantText(text);
   if (clean.length < 115 || Math.random() > 0.72) return [clean];
 
   const midpoint = Math.floor(clean.length / 2);
@@ -631,6 +632,15 @@ function splitAssistantReply(text: string) {
     clean.slice(0, splitAt).trim(),
     clean.slice(splitAt).trim()
   ];
+}
+
+function normalizeAssistantText(text: string) {
+  return text
+    .replace(/[\\\/]+(?=\s|$)/g, "")
+    .replace(/[\\\/]+/g, " ")
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function findSplitPoint(text: string, midpoint: number, token: string) {

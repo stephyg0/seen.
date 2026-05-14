@@ -82,7 +82,7 @@ export async function POST(request: Request) {
         let response = "";
 
         for await (const chunk of stream) {
-          const content = cleanTextingStyle(chunk.choices[0]?.delta?.content ?? "");
+          const content = streamSafeText(chunk.choices[0]?.delta?.content ?? "");
 
           if (content) {
             response += content;
@@ -147,9 +147,21 @@ function stripEmoji(text: string) {
 
 function cleanTextingStyle(text: string) {
   return stripEmoji(text)
+    .replace(/[\\\/]+(?=\s|$)/g, "")
+    .replace(/[\\\/]+/g, " ")
     .replace(/\s*\n+\s*/g, " ")
     .replace(/[!。]/g, "")
     .replace(/([^\s.?!…-])[.](?=\s|$)/g, "$1")
     .replace(/\s{2,}/g, " ")
     .trimStart();
+}
+
+function streamSafeText(text: string) {
+  return stripEmoji(text)
+    .replace(/[\\\/]+(?=\s|$)/g, "")
+    .replace(/[\\\/]+/g, " ")
+    .replace(/\s*\n+\s*/g, " ")
+    .replace(/[!。]/g, "")
+    .replace(/([^\s.?!…-])[.](?=\s|$)/g, "$1")
+    .replace(/[ \t]{2,}/g, " ");
 }
