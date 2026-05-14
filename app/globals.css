@@ -127,9 +127,9 @@ button {
 
 .mark-logo {
   display: block;
-  width: min(11.75rem, 54vw);
+  width: min(6.75rem, 34vw);
   height: auto;
-  margin-bottom: 1.4rem;
+  margin-bottom: 1.2rem;
 }
 
 .landing h1 {
