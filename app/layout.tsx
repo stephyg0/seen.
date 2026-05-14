@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   title: "Seen",
   description: "An emotionally realistic texting experience.",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg"
+  },
   appleWebApp: {
     capable: true,
     title: "seen",

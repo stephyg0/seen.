@@ -532,7 +532,7 @@ function Landing({ onStart }: { onStart: () => void }) {
   return (
     <section className="landing">
       <div className="landing-copy">
-        <div className="mark">seen</div>
+        <img className="mark-logo" src="/seen-logo.svg" alt="seen" />
         <h1>the text you probably shouldn't answer.</h1>
         <p>
           A private little conversation that remembers too much and replies a

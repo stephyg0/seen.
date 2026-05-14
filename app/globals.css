@@ -125,12 +125,10 @@ button {
   max-width: 42rem;
 }
 
-.mark {
-  width: max-content;
-  color: var(--accent);
-  font-size: 0.78rem;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.mark-logo {
+  display: block;
+  width: min(11.75rem, 54vw);
+  height: auto;
   margin-bottom: 1.4rem;
 }
 
