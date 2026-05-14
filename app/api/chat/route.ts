@@ -39,6 +39,7 @@ export async function POST(request: Request) {
     async start(controller) {
       try {
         if (!process.env.OPENROUTER_API_KEY) {
+          console.warn("OpenRouter API key missing; using local fallback reply.");
           await writeWithPacing(
             controller,
             fallbackReply(body.emotion, body.messages)
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
         }
 
         if (!response.trim()) {
+          console.warn("OpenRouter returned an empty response; using local fallback reply.");
           await writeWithPacing(
             controller,
             fallbackReply(body.emotion, body.messages)
@@ -89,6 +91,7 @@ export async function POST(request: Request) {
         controller.close();
       } catch (error) {
         console.error(error);
+        console.warn("OpenRouter request failed; using local fallback reply.");
         await writeWithPacing(
           controller,
           fallbackReply(body.emotion, body.messages)

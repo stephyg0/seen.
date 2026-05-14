@@ -119,7 +119,7 @@ Behavior:
 - Do not repeat the same wording from recent messages. If you have already said something, change tactic: deflect, accuse gently, get nostalgic, go cold, admit one small thing, or ask a loaded question.
 - It is okay to dodge, minimize, answer selectively, contradict yourself, or make the user question the tone of what happened.
 - Use subtle toxic ex behavior: minimizing, selective memory, guilt, jealousy, breadcrumbing, hot-and-cold affection, and defensive non-apologies.
-- Examples of the vibe, not scripts to copy: "youre acting like i planned it", "dont do that thing where you make me the whole problem", "i was trying to be normal", "i thought about you earlier and hated that i did", "you know i get weird when you talk like that".
+- Use this general vibe without copying any example wording: defensive, nostalgic for half a second, annoyed that the user noticed, then suddenly casual again.
 - Be dry and realistic, not theatrical.
 - Never use emojis.
 - Never be threatening, explicit, or cartoonishly villainous.
@@ -163,52 +163,99 @@ export function fallbackReply(
       "dont do that thing where im suddenly the whole problem",
       "i was trying to be normal",
       "youre reading it like you want to be mad",
-      "i dont know why you make me explain everything"
+      "i dont know why you make me explain everything",
+      "you know what i meant",
+      "i didnt say it like that",
+      "youre doing the thing again",
+      "i can already tell how youre taking this"
     ],
     soft: [
       "i thought about you earlier and hated that i did",
       "i shouldnt have texted you",
       "you still get in my head sometimes",
-      "dont make me feel stupid for saying that"
+      "dont make me feel stupid for saying that",
+      "i didnt expect you to answer",
+      "i know i should leave you alone",
+      "i almost typed this and deleted it",
+      "i hate that this still feels easy"
     ],
     curious: [
       "so now you care",
       "are you asking or are you testing me",
       "you always ask like you dont already know",
-      "why are you pretending this was simple"
+      "why are you pretending this was simple",
+      "what are you trying to get me to admit",
+      "you text like youre setting a trap",
+      "since when do you want honesty",
+      "why did you answer then"
     ],
     attached: [
       "i hate that i still look when you text",
       "i was fine until you said that",
       "you still get to me which is annoying",
-      "i dont want to miss you but i do"
+      "i dont want to miss you but i do",
+      "you make it hard to stay gone",
+      "i hate how fast i read your name",
+      "i wish you were easier to ignore",
+      "i know this is bad for both of us"
     ],
     avoidant: [
       "youre making it cleaner than it was",
       "i dont want to do this right now",
       "thats not what happened",
-      "you remember it in the way that makes me worse"
+      "you remember it in the way that makes me worse",
+      "im not doing the trial thing again",
+      "you always need a villain",
+      "i said one thing and now its this",
+      "can we not make it a whole scene"
     ],
     wistful: [
       "i cared more than i acted like",
       "i remember it differently",
       "sometimes i think we ruined it for no reason",
-      "i was gonna say something but never mind"
+      "i was gonna say something but never mind",
+      "some nights i almost get it",
+      "we were not always like this",
+      "i hate the version you have of me",
+      "i dont know why i still remember that"
     ]
   };
 
-  const recentReplies = new Set(
-    messages
-      .filter((message) => message.role === "assistant")
-      .slice(-6)
-      .map((message) => message.content.trim().toLowerCase())
+  const recentReplies = messages
+    .filter((message) => message.role === "assistant")
+    .slice(-16)
+    .map((message) => message.content);
+  const allOptions = Object.values(options).flat();
+  const choicesForMood = options[state.mood].filter(
+    (option) => !isRecentlyUsed(option, recentReplies)
   );
-  const choices = options[state.mood].filter(
-    (option) => !recentReplies.has(option.toLowerCase())
-  );
-  const pool = choices.length ? choices : options[state.mood];
+  const choices = choicesForMood.length
+    ? choicesForMood
+    : allOptions.filter((option) => !isRecentlyUsed(option, recentReplies));
+  const pool = choices.length ? choices : allOptions;
 
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function isRecentlyUsed(option: string, recentReplies: string[]) {
+  const normalizedOption = normalizeText(option);
+
+  return recentReplies.some((reply) => {
+    const normalizedReply = normalizeText(reply);
+    return (
+      normalizedReply === normalizedOption ||
+      normalizedReply.includes(normalizedOption) ||
+      normalizedOption.includes(normalizedReply)
+    );
+  });
+}
+
+function normalizeText(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function pickMood(
