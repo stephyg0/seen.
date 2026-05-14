@@ -2,6 +2,7 @@ import { OpenRouter } from "@openrouter/sdk";
 import {
   DEFAULT_MODEL,
   buildSystemPrompt,
+  fallbackReply,
   messagesForModel
 } from "@/lib/emotion-engine";
 import type { ChatMessage, EmotionalState, SettingsState } from "@/lib/chat-types";
@@ -26,8 +27,6 @@ type OpenRouterChunk = {
 const OPENROUTER_RETRY_DELAYS_MS = [0, 900, 1900];
 const UNAVAILABLE_REPLY =
   "my phone is being weird give me a minute";
-const CREDIT_EXHAUSTED_REPLY =
-  "i cant text right now";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as ChatRequest;
@@ -42,6 +41,13 @@ export async function POST(request: Request) {
     if (!process.env.OPENROUTER_API_KEY) {
       console.error("OpenRouter API key missing. Set OPENROUTER_API_KEY in local and deployed environments.");
       return textResponse(UNAVAILABLE_REPLY, 503);
+    }
+
+    if (
+      process.env.NODE_ENV === "development" &&
+      request.headers.get("x-seen-test-credit-exhausted") === "1"
+    ) {
+      return textResponse(fallbackReply(body.emotion, body.messages));
     }
 
     const openrouter = new OpenRouter({
@@ -83,7 +89,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
     if (isCreditOrQuotaError(error)) {
-      return textResponse(CREDIT_EXHAUSTED_REPLY, 402);
+      console.warn("OpenRouter credits or free quota exhausted; using local conversation fallback.");
+      return textResponse(fallbackReply(body.emotion, body.messages));
     }
 
     return textResponse(UNAVAILABLE_REPLY, 503);

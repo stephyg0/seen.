@@ -397,18 +397,6 @@ export function TextingExperience() {
     return permission;
   }
 
-  async function sendTestNotification() {
-    const permission = await requestAndStoreNotifications();
-    if (permission !== "granted") return;
-
-    new Notification(contactNameRef.current, {
-      body: "you there",
-      icon: "/profile_default.png",
-      badge: "/profile_default.png",
-      tag: `seen-test-${Date.now()}`
-    });
-  }
-
   return (
     <main className={`experience ${themeClass}`}>
       <div className="ambient ambient-one" />
@@ -509,7 +497,7 @@ export function TextingExperience() {
         notificationPermission={notificationPermission}
         onClose={() => setSettingsOpen(false)}
         onChange={setSettings}
-        onEnableNotifications={sendTestNotification}
+        onEnableNotifications={requestAndStoreNotifications}
       />
     </main>
   );
@@ -532,7 +520,7 @@ function shouldNotifyAway() {
 }
 
 function notificationLabel(permission: NotificationPermission | "unsupported") {
-  if (permission === "granted") return "send test notification";
+  if (permission === "granted") return "on";
   if (permission === "denied") return "blocked in browser settings";
   if (permission === "unsupported") return "not supported here";
   return "allow notifications";
